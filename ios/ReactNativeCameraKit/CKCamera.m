@@ -87,7 +87,7 @@ RCT_ENUM_CONVERTER(CKCameraZoomMode, (@{
 @property (nonatomic) dispatch_queue_t sessionQueue;
 @property (nonatomic) AVCaptureSession *session;
 @property (nonatomic, readwrite) AVCaptureDeviceInput *videoDeviceInput;
-@property (nonatomic) AVCaptureMovieFileOutput *movieFileOutput;
+// @property (nonatomic) AVCaptureMovieFileOutput *movieFileOutput;
 @property (nonatomic) AVCaptureStillImageOutput *stillImageOutput;
 @property (nonatomic, strong) AVCaptureVideoDataOutput *videoDataOutput;
 @property (nonatomic, strong) NSString *codeStringValue;
@@ -361,18 +361,18 @@ RCT_ENUM_CONVERTER(CKCameraZoomMode, (@{
             self.setupResult = CKSetupResultSessionConfigurationFailed;
         }
 
-        AVCaptureMovieFileOutput *movieFileOutput = [[AVCaptureMovieFileOutput alloc] init];
-        if ( [self.session canAddOutput:movieFileOutput] ) {
-            [self.session addOutput:movieFileOutput];
-            AVCaptureConnection *connection = [movieFileOutput connectionWithMediaType:AVMediaTypeVideo];
-            if ( connection.isVideoStabilizationSupported ) {
-                connection.preferredVideoStabilizationMode = AVCaptureVideoStabilizationModeAuto;
-            }
-            self.movieFileOutput = movieFileOutput;
-        }
-        else {
-            self.setupResult = CKSetupResultSessionConfigurationFailed;
-        }
+        // AVCaptureMovieFileOutput *movieFileOutput = [[AVCaptureMovieFileOutput alloc] init];
+        // if ( [self.session canAddOutput:movieFileOutput] ) {
+        //     [self.session addOutput:movieFileOutput];
+        //     AVCaptureConnection *connection = [movieFileOutput connectionWithMediaType:AVMediaTypeVideo];
+        //     if ( connection.isVideoStabilizationSupported ) {
+        //         connection.preferredVideoStabilizationMode = AVCaptureVideoStabilizationModeAuto;
+        //     }
+        //     self.movieFileOutput = movieFileOutput;
+        // }
+        // else {
+        //     self.setupResult = CKSetupResultSessionConfigurationFailed;
+        // }
 
         AVCaptureStillImageOutput *stillImageOutput = [[AVCaptureStillImageOutput alloc] init];
         if ( [self.session canAddOutput:stillImageOutput] ) {
@@ -641,10 +641,10 @@ RCT_ENUM_CONVERTER(CKCameraZoomMode, (@{
             [self.session addInput:self.videoDeviceInput];
         }
 
-        AVCaptureConnection *connection = [self.movieFileOutput connectionWithMediaType:AVMediaTypeVideo];
-        if ( connection.isVideoStabilizationSupported ) {
-            connection.preferredVideoStabilizationMode = AVCaptureVideoStabilizationModeAuto;
-        }
+        // AVCaptureConnection *connection = [self.movieFileOutput connectionWithMediaType:AVMediaTypeVideo];
+        // if ( connection.isVideoStabilizationSupported ) {
+        //     connection.preferredVideoStabilizationMode = AVCaptureVideoStabilizationModeAuto;
+        // }
 
         [self.session commitConfiguration];
         [self addObservers];
@@ -1077,6 +1077,7 @@ RCT_ENUM_CONVERTER(CKCameraZoomMode, (@{
 - (void)captureOutput:(AVCaptureOutput *)output
 didOutputSampleBuffer:(CMSampleBufferRef)sampleBuffer fromConnection:(AVCaptureConnection *)connection {
     CVImageBufferRef imageBuffer = CMSampleBufferGetImageBuffer(sampleBuffer);
+    NSLog(@"I want my MTV");
     if (imageBuffer) {
         MLKVisionImage *image = [[MLKVisionImage alloc] initWithBuffer:sampleBuffer];
         image.orientation =
@@ -1091,6 +1092,7 @@ didOutputSampleBuffer:(CMSampleBufferRef)sampleBuffer fromConnection:(AVCaptureC
             return;
           }
             if (barcodes.count == 0) {
+            NSLog(@"Currently No Barcode detected");
               return;
             }
           if (barcodes.count > 0) {
