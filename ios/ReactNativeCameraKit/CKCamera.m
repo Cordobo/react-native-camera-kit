@@ -389,7 +389,7 @@ RCT_ENUM_CONVERTER(CKCameraZoomMode, (@{
             self.videoDataOutput = output;
             
             [self.videoDataOutput setAlwaysDiscardsLateVideoFrames:YES];
-            [self.videoDataOutput setSampleBufferDelegate:self queue:self.sessionQueue;
+            [self.videoDataOutput setSampleBufferDelegate:self queue:self.sessionQueue];
             [self.session addOutput:self.videoDataOutput];
         }
 
