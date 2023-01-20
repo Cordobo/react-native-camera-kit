@@ -1,5 +1,7 @@
 @import Foundation;
 @import Photos;
+@import MLKitBarcodeScanning;
+@import MLKitVision;
 
 #if __has_include(<React/RCTBridge.h>)
 #import <React/UIView+React.h>
@@ -66,7 +68,7 @@ RCT_ENUM_CONVERTER(CKCameraZoomMode, (@{
 
 @end
 
-@interface CKCamera () <AVCaptureMetadataOutputObjectsDelegate>
+@interface CKCamera () <AVCaptureVideoDataOutputSampleBufferDelegate>
 
 
 @property (nonatomic, strong) AVCaptureVideoPreviewLayer *previewLayer;
@@ -87,7 +89,7 @@ RCT_ENUM_CONVERTER(CKCameraZoomMode, (@{
 @property (nonatomic, readwrite) AVCaptureDeviceInput *videoDeviceInput;
 @property (nonatomic) AVCaptureMovieFileOutput *movieFileOutput;
 @property (nonatomic) AVCaptureStillImageOutput *stillImageOutput;
-@property (nonatomic, strong) AVCaptureMetadataOutput *metadataOutput;
+@property (nonatomic, strong) AVCaptureVideoDataOutput *videoDataOutput;
 @property (nonatomic, strong) NSString *codeStringValue;
 
 
@@ -382,12 +384,13 @@ RCT_ENUM_CONVERTER(CKCameraZoomMode, (@{
             self.setupResult = CKSetupResultSessionConfigurationFailed;
         }
 
-        AVCaptureMetadataOutput * output = [[AVCaptureMetadataOutput alloc] init];
+        AVCaptureVideoDataOutput * output = [[AVCaptureVideoDataOutput alloc] init];
         if ([self.session canAddOutput:output]) {
-            self.metadataOutput = output;
-            [self.session addOutput:self.metadataOutput];
-            [self.metadataOutput setMetadataObjectsDelegate:self queue:dispatch_get_main_queue()];
-            [self.metadataOutput setMetadataObjectTypes:[self.metadataOutput availableMetadataObjectTypes]];
+            self.videoDataOutput = output;
+            
+            [self.videoDataOutput setAlwaysDiscardsLateVideoFrames:YES];
+            [self.videoDataOutput setSampleBufferDelegate:self queue:self.sessionQueue;
+            [self.session addOutput:self.videoDataOutput];
         }
 
         [self.session commitConfiguration];
@@ -836,9 +839,6 @@ RCT_ENUM_CONVERTER(CKCameraZoomMode, (@{
         [self startAnimatingScanner:self.dataReadingFrame];
 
         [self addVisualEffects:self.dataReadingFrame.frame];
-
-        CGRect visibleRect = [self.previewLayer metadataOutputRectOfInterestForRect:self.dataReadingFrame.frame];
-        self.metadataOutput.rectOfInterest = visibleRect;
     }
 }
 
@@ -1072,37 +1072,59 @@ RCT_ENUM_CONVERTER(CKCameraZoomMode, (@{
     }
 }
 
-#pragma mark - AVCaptureMetadataOutputObjectsDelegate
+#pragma mark - AVCaptureVideoDataOutputSampleBufferDelegate
 
 - (void)captureOutput:(AVCaptureOutput *)output
-didOutputMetadataObjects:(NSArray<__kindof AVMetadataObject *> *)metadataObjects
-       fromConnection:(AVCaptureConnection *)connection {
-
-    for(AVMetadataObject *metadataObject in metadataObjects)
-    {
-        if ([metadataObject isKindOfClass:[AVMetadataMachineReadableCodeObject class]] && [self isSupportedBarCodeType:metadataObject.type]) {
-
-            AVMetadataMachineReadableCodeObject *code = (AVMetadataMachineReadableCodeObject*)[self.previewLayer transformedMetadataObjectForMetadataObject:metadataObject];
-            if (self.onReadCode && code.stringValue && ![code.stringValue isEqualToString:self.codeStringValue]) {
-                self.onReadCode(@{@"codeStringValue": code.stringValue});
-                [self stopAnimatingScanner];
+didOutputSampleBuffer:(CMSampleBufferRef)sampleBuffer fromConnection:(AVCaptureConnection *)connection {
+    CVImageBufferRef imageBuffer = CMSampleBufferGetImageBuffer(sampleBuffer);
+    if (imageBuffer) {
+        MLKVisionImage *image = [[MLKVisionImage alloc] initWithBuffer:sampleBuffer];
+        image.orientation =
+          [self imageOrientationFromDeviceOrientation:UIDevice.currentDevice.orientation
+                                       cameraPosition:_cameraType];
+        MLKBarcodeScanner *barcodeScanner = [MLKBarcodeScanner barcodeScanner];
+        [barcodeScanner processImage:image
+                          completion:^(NSArray<MLKBarcode *> *_Nullable barcodes,
+                                       NSError *_Nullable error) {
+          if (error != nil) {
+            NSLog(@"Failed to scan barcodes with error: %@", error.localizedDescription);
+            return;
+          }
+            if (barcodes.count == 0) {
+              return;
             }
-        }
+          if (barcodes.count > 0) {
+              if (self.onReadCode && barcodes[0].displayValue && ![barcodes[0].displayValue isEqualToString:self.codeStringValue]) {
+                              self.onReadCode(@{@"codeStringValue": barcodes[0].displayValue});
+                              [self stopAnimatingScanner];
+                          }
+          }
+        }];
     }
 }
 
-- (BOOL)isSupportedBarCodeType:(NSString *)currentType {
-    BOOL result = NO;
-    NSArray *supportedBarcodeTypes = @[AVMetadataObjectTypeUPCECode,AVMetadataObjectTypeCode39Code,AVMetadataObjectTypeCode39Mod43Code,
-                                       AVMetadataObjectTypeEAN13Code,AVMetadataObjectTypeEAN8Code, AVMetadataObjectTypeCode93Code,
-                                       AVMetadataObjectTypeCode128Code, AVMetadataObjectTypePDF417Code, AVMetadataObjectTypeQRCode,
-                                       AVMetadataObjectTypeAztecCode, AVMetadataObjectTypeDataMatrixCode, AVMetadataObjectTypeInterleaved2of5Code];
-    for (NSString* object in supportedBarcodeTypes) {
-        if ([currentType isEqualToString:object]) {
-            result = YES;
-        }
-    }
-    return result;
+- (UIImageOrientation)
+  imageOrientationFromDeviceOrientation:(UIDeviceOrientation)deviceOrientation
+                         cameraPosition:(AVCaptureDevicePosition)cameraPosition {
+  switch (deviceOrientation) {
+    case UIDeviceOrientationPortrait:
+      return cameraPosition == AVCaptureDevicePositionFront ? UIImageOrientationLeftMirrored
+                                                            : UIImageOrientationRight;
+
+    case UIDeviceOrientationLandscapeLeft:
+      return cameraPosition == AVCaptureDevicePositionFront ? UIImageOrientationDownMirrored
+                                                            : UIImageOrientationUp;
+    case UIDeviceOrientationPortraitUpsideDown:
+      return cameraPosition == AVCaptureDevicePositionFront ? UIImageOrientationRightMirrored
+                                                            : UIImageOrientationLeft;
+    case UIDeviceOrientationLandscapeRight:
+      return cameraPosition == AVCaptureDevicePositionFront ? UIImageOrientationUpMirrored
+                                                            : UIImageOrientationDown;
+    case UIDeviceOrientationUnknown:
+    case UIDeviceOrientationFaceUp:
+    case UIDeviceOrientationFaceDown:
+      return UIImageOrientationUp;
+  }
 }
 
 #pragma mark - String Constants For Scanner
